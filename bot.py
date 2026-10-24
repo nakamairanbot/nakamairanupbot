@@ -25,7 +25,7 @@ ADMIN_IDS = [
 REQUIRED_CHANNELS = [
     # مثال:
      "@nakama_iran",
-    # "@channel2",
+     "@nakamairan_chat",
 ]
 
 redis = Redis(
