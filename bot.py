@@ -24,7 +24,7 @@ ADMIN_IDS = [
 # کانال‌هایی که کاربر باید عضو باشه (یوزرنیم با @)
 REQUIRED_CHANNELS = [
     # مثال:
-     "@NakamaIran | One Piece | وان پیس",
+     "@nakama_iran",
     # "@channel2",
 ]
 
