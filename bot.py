@@ -6,6 +6,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -23,7 +24,7 @@ ADMIN_IDS = [
 # کانال‌هایی که کاربر باید عضو باشه (یوزرنیم با @)
 REQUIRED_CHANNELS = [
     # مثال:
-    # "@channel1",
+     "@NakamaIran | One Piece | وان پیس",
     # "@channel2",
 ]
 
