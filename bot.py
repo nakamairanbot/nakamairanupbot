@@ -1,5 +1,4 @@
 import os
-import json
 import random
 import string
 from telegram import Update
@@ -10,34 +9,21 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+from upstash_redis import Redis
 
 # ---------------------- تنظیمات ----------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# لیست آیدی ادمین‌ها (با کاما جدا کن)
-# مثال: 123456789,987654321,111222333
 ADMIN_IDS = [
     int(x.strip())
     for x in os.getenv("ADMIN_IDS", "").split(",")
     if x.strip().isdigit()
 ]
 
-FILES_DB = "files.json"
-
-file_map = {}
-
-def load_files():
-    global file_map
-    if os.path.exists(FILES_DB):
-        try:
-            with open(FILES_DB, "r", encoding="utf-8") as f:
-                file_map = json.load(f)
-        except:
-            file_map = {}
-
-def save_files():
-    with open(FILES_DB, "w", encoding="utf-8") as f:
-        json.dump(file_map, f, ensure_ascii=False, indent=2)
+# اتصال به Redis
+redis = Redis(
+    url=os.getenv("UPSTASH_REDIS_REST_URL"),
+    token=os.getenv("UPSTASH_REDIS_REST_TOKEN")
+)
 
 def generate_code(length=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -53,8 +39,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # اگر با پارامتر اومده (از لینک کانال)
     if args:
         code = args[0]
-        if code in file_map:
-            file_id = file_map[code]
+        file_id = redis.get(code)
+
+        if file_id:
             try:
                 await update.message.reply_document(
                     document=file_id,
@@ -107,11 +94,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ساخت کد یکتا
     code = generate_code()
-    while code in file_map:
+    while redis.get(code):
         code = generate_code()
 
-    file_map[code] = file_id
-    save_files()
+    # ذخیره در Redis (دائمی)
+    redis.set(code, file_id)
 
     bot_username = (await context.bot.get_me()).username
     deep_link = f"https://t.me/{bot_username}?start={code}"
@@ -126,8 +113,6 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------------- اجرای ربات ----------------------
 def main():
-    load_files()
-
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
