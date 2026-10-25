@@ -217,13 +217,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deep_link = f"https://t.me/{bot_username}?start={code}"
 
     await update.message.reply_text(
-        f"✅ فایل ذخیره شد!\n\n"
-        f"📁 نام: {file_name}\n"
-        f"🔗 لینک آماده:\n`{deep_link}`\n\n"
-        f"این لینک رو توی کانال بذار.",
-        parse_mode="Markdown"
-    )
-
+    f"✅ فایل ذخیره شد!\n\n"
+    f"📁 نام: {file_name}\n"
+    f"🔗 لینک آماده:\n{deep_link}\n\n"
+    f"این لینک رو توی کانال بذار."
+)
 # ---------------------- اجرای ربات ----------------------
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
