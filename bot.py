@@ -179,14 +179,14 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for i, code in enumerate(keys, 1):
         link = f"https://t.me/{bot_username}?start={code}"
-        text += f"{i}. `{code}`\n{link}\n\n"
+        text += f"{i}. {code}\n{link}\n\n"
+
         if i % 15 == 0:
-           await update.message.reply_text(text)
+            await update.message.reply_text(text)
             text = ""
 
     if text:
-       await update.message.reply_text(text)
-
+        await update.message.reply_text(text)
 # ---------------------- دریافت فایل از ادمین ----------------------
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
