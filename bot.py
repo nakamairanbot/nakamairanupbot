@@ -1,6 +1,8 @@
 import os
 import random
 import string
+import asyncio
+from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -21,11 +23,10 @@ ADMIN_IDS = [
     if x.strip().isdigit()
 ]
 
-# کانال‌هایی که کاربر باید عضو باشه (یوزرنیم با @)
 REQUIRED_CHANNELS = [
-    # مثال:
-     "@nakama_iran",
-     "@nakamairan_chat",
+    # کانال‌ها و گروه‌ها رو اینجا بذار
+    # "@nakama_iran",
+    # "@nakamairan_chat",
 ]
 
 redis = Redis(
@@ -40,10 +41,8 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 async def check_membership(bot, user_id: int) -> bool:
-    """چک می‌کنه کاربر عضو همه کانال‌های اجباری هست یا نه"""
     if not REQUIRED_CHANNELS:
-        return True  # اگر کانالی تعریف نشده باشه، آزاد باشه
-
+        return True
     for channel in REQUIRED_CHANNELS:
         try:
             member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
@@ -54,27 +53,32 @@ async def check_membership(bot, user_id: int) -> bool:
     return True
 
 def get_join_keyboard():
-    """دکمه‌های عضویت در کانال‌ها"""
     buttons = []
     for channel in REQUIRED_CHANNELS:
-        username = channel.lstrip("@")
+        username = str(channel).lstrip("@")
         buttons.append([InlineKeyboardButton(
             text=f"عضویت در {channel}",
             url=f"https://t.me/{username}"
         )])
-    
     buttons.append([InlineKeyboardButton(
         text="✅ عضو شدم، بررسی کن",
         callback_data="check_join"
     )])
     return InlineKeyboardMarkup(buttons)
 
+async def delete_message_after(bot, chat_id: int, message_id: int, delay: int = 180):
+    """بعد از چند ثانیه پیام رو پاک می‌کنه"""
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
 # ---------------------- دستور /start ----------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     args = context.args
 
-    # اگر با پارامتر اومده (لینک فایل)
     if args:
         code = args[0]
         file_id = redis.get(code)
@@ -83,28 +87,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ فایل پیدا نشد یا منقضی شده.")
             return
 
-        # چک عضویت
         is_member = await check_membership(context.bot, user.id)
         if not is_member:
             await update.message.reply_text(
                 "⚠️ برای دریافت فایل باید در کانال‌های زیر عضو شوید:",
                 reply_markup=get_join_keyboard()
             )
-            # کد فایل رو موقتاً ذخیره می‌کنیم تا بعد از عضویت بفرسته
             context.user_data["pending_code"] = code
             return
 
-        # ارسال فایل
         try:
-            await update.message.reply_document(
+            # ارسال فایل
+            sent = await update.message.reply_document(
                 document=file_id,
                 caption="✅ فایل شما آماده است"
+            )
+            # اگر ویدیو بود بعد از ۳ دقیقه پاک کن
+            # (چون file_id ویدیو هم با document فرستاده می‌شه، همیشه پاک می‌کنیم)
+            asyncio.create_task(
+                delete_message_after(context.bot, update.effective_chat.id, sent.message_id, 180)
             )
         except Exception:
             await update.message.reply_text("❌ مشکلی در ارسال فایل پیش آمد.")
         return
 
-    # پیام عادی
     if is_admin(user.id):
         await update.message.reply_text(
             "سلام ادمین 👋\n\n"
@@ -117,7 +123,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "برای دریافت فایل، از لینک‌های داخل کانال استفاده کنید."
         )
 
-# ---------------------- بررسی عضویت (دکمه) ----------------------
+# ---------------------- بررسی عضویت ----------------------
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -132,16 +138,19 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    # اگر کد در انتظار داشت
     code = context.user_data.get("pending_code")
     if code:
         file_id = redis.get(code)
         if file_id:
             try:
-                await context.bot.send_document(
+                sent = await context.bot.send_document(
                     chat_id=user_id,
                     document=file_id,
                     caption="✅ فایل شما آماده است"
+                )
+                # پاک کردن بعد از ۳ دقیقه
+                asyncio.create_task(
+                    delete_message_after(context.bot, user_id, sent.message_id, 180)
                 )
                 await query.edit_message_text("✅ عضویت تأیید شد. فایل براتون ارسال شد.")
             except Exception:
@@ -152,7 +161,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await query.edit_message_text("✅ عضویت شما تأیید شد.")
 
-# ---------------------- لیست فایل‌ها (فقط ادمین) ----------------------
+# ---------------------- لیست فایل‌ها ----------------------
 async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -171,8 +180,6 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, code in enumerate(keys, 1):
         link = f"https://t.me/{bot_username}?start={code}"
         text += f"{i}. `{code}`\n{link}\n\n"
-
-        # جلوگیری از پیام خیلی طولانی
         if i % 15 == 0:
             await update.message.reply_text(text, parse_mode="Markdown")
             text = ""
@@ -217,13 +224,24 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deep_link = f"https://t.me/{bot_username}?start={code}"
 
     await update.message.reply_text(
-    f"✅ فایل ذخیره شد!\n\n"
-    f"📁 نام: {file_name}\n"
-    f"🔗 لینک آماده:\n{deep_link}\n\n"
-    f"این لینک رو توی کانال بذار."
-)
-# ---------------------- اجرای ربات ----------------------
-def main():
+        f"✅ فایل ذخیره شد!\n\n"
+        f"📁 نام: {file_name}\n"
+        f"🔗 لینک آماده:\n{deep_link}\n\n"
+        f"این لینک رو توی کانال بذار."
+    )
+
+# ---------------------- اجرا + Health Check ----------------------
+async def health(request):
+    return web.Response(text="Bot is alive")
+
+async def telegram_webhook(request):
+    application = request.app["application"]
+    data = await request.json()
+    update = Update.de_json(data, application.bot)
+    await application.process_update(update)
+    return web.Response(text="OK")
+
+async def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -237,17 +255,25 @@ def main():
     PORT = int(os.environ.get("PORT", 8443))
     WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-    if WEBHOOK_URL:
-        print("در حال اجرا با Webhook...")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=BOT_TOKEN,
-            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
-        )
-    else:
-        print("در حال اجرا با Polling...")
-        application.run_polling()
+    # سرور aiohttp
+    app = web.Application()
+    app["application"] = application
+    app.router.add_get("/", health)
+    app.router.add_post(f"/{BOT_TOKEN}", telegram_webhook)
+
+    # ست کردن وب‌هوک
+    await application.initialize()
+    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
+
+    print("ربات با Health Check آماده است...")
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
+    # نگه داشتن ربات
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
