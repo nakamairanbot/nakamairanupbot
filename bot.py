@@ -24,7 +24,7 @@ ADMIN_IDS = [
 ]
 
 REQUIRED_CHANNELS = [
-    # کانال‌ها و گروه‌ها رو اینجا بذار
+    # اینجا کانال‌ها و گروه‌ها رو بنویس
     # "@nakama_iran",
     # "@nakamairan_chat",
 ]
@@ -67,7 +67,6 @@ def get_join_keyboard():
     return InlineKeyboardMarkup(buttons)
 
 async def delete_message_after(bot, chat_id: int, message_id: int, delay: int = 180):
-    """بعد از چند ثانیه پیام رو پاک می‌کنه"""
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
@@ -81,11 +80,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if args:
         code = args[0]
-        file_id = redis.get(code)
+        data = redis.get(code)
 
-        if not file_id:
+        if not data:
             await update.message.reply_text("❌ فایل پیدا نشد یا منقضی شده.")
             return
+
+        file_id = data.split("|||")[0]
 
         is_member = await check_membership(context.bot, user.id)
         if not is_member:
@@ -97,13 +98,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         try:
-            # ارسال فایل
             sent = await update.message.reply_document(
                 document=file_id,
                 caption="✅ فایل شما آماده است"
             )
-            # اگر ویدیو بود بعد از ۳ دقیقه پاک کن
-            # (چون file_id ویدیو هم با document فرستاده می‌شه، همیشه پاک می‌کنیم)
             asyncio.create_task(
                 delete_message_after(context.bot, update.effective_chat.id, sent.message_id, 180)
             )
@@ -140,15 +138,15 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     code = context.user_data.get("pending_code")
     if code:
-        file_id = redis.get(code)
-        if file_id:
+        data = redis.get(code)
+        if data:
+            file_id = data.split("|||")[0]
             try:
                 sent = await context.bot.send_document(
                     chat_id=user_id,
                     document=file_id,
                     caption="✅ فایل شما آماده است"
                 )
-                # پاک کردن بعد از ۳ دقیقه
                 asyncio.create_task(
                     delete_message_after(context.bot, user_id, sent.message_id, 180)
                 )
@@ -178,15 +176,22 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"📋 لیست فایل‌ها ({len(keys)} مورد):\n\n"
 
     for i, code in enumerate(keys, 1):
-        link = f"https://t.me/{bot_username}?start={code}"
-        text += f"{i}. {code}\n{link}\n\n"
+        data = redis.get(code)
+        if data and "|||" in data:
+            file_name = data.split("|||")[1]
+        else:
+            file_name = "بدون نام"
 
-        if i % 15 == 0:
+        link = f"https://t.me/{bot_username}?start={code}"
+        text += f"{i}. {file_name}\n{link}\n\n"
+
+        if i % 12 == 0:
             await update.message.reply_text(text)
             text = ""
 
     if text:
         await update.message.reply_text(text)
+
 # ---------------------- دریافت فایل از ادمین ----------------------
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -218,7 +223,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     while redis.get(code):
         code = generate_code()
 
-    redis.set(code, file_id)
+    # ذخیره همزمان file_id و اسم فایل
+    redis.set(code, f"{file_id}|||{file_name}")
 
     bot_username = (await context.bot.get_me()).username
     deep_link = f"https://t.me/{bot_username}?start={code}"
@@ -255,24 +261,21 @@ async def main():
     PORT = int(os.environ.get("PORT", 8443))
     WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-    # سرور aiohttp
     app = web.Application()
     app["application"] = application
     app.router.add_get("/", health)
     app.router.add_post(f"/{BOT_TOKEN}", telegram_webhook)
 
-    # ست کردن وب‌هوک
     await application.initialize()
     await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
 
     print("ربات با Health Check آماده است...")
-    
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
 
-    # نگه داشتن ربات
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
