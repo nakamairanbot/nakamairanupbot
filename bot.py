@@ -181,11 +181,11 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
         link = f"https://t.me/{bot_username}?start={code}"
         text += f"{i}. `{code}`\n{link}\n\n"
         if i % 15 == 0:
-            await update.message.reply_text(text, parse_mode="Markdown")
+           await update.message.reply_text(text)
             text = ""
 
     if text:
-        await update.message.reply_text(text, parse_mode="Markdown")
+       await update.message.reply_text(text)
 
 # ---------------------- دریافت فایل از ادمین ----------------------
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
