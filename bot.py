@@ -253,7 +253,7 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("list", list_files))
     application.add_handler(MessageHandler(
-        filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO,
+        filters.ChatType.PRIVATE & (filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO),
         handle_file
     ))
     application.add_handler(CallbackQueryHandler(check_join_callback, pattern="^check_join$"))
